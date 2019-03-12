@@ -65,6 +65,14 @@ lnmp_docker_kill()
     Echo_Green "done."
 }
 
+lnmp_docker_nginx_reload()
+{
+    Echo_Green "Test Nginx configure file......"
+    docker exec -t lnmp-docker-nginx-acme nginx -t
+    Echo_Green "Reload Nginx......"
+    docker exec -t lnmp-docker-nginx-acme /etc/init.d/nginx reload
+}
+
 lnmp_docker_status()
 {
     NGINX_SERVER=`docker-compose ps -q nginx`
@@ -208,10 +216,10 @@ server
     }
 EOF
 
-    echo "Test Nginx configure file......"
+    Echo_Green "Test Nginx configure file......"
     docker exec -t lnmp-docker-nginx-acme nginx -t
-    echo "Reload Nginx......"
-    docker exec -t lnmp-docker-nginx-acme nginx -s reload
+    Echo_Green "Reload Nginx......"
+    docker exec -t lnmp-docker-nginx-acme /etc/init.d/nginx reload
 }
 
 Add_VHost()
@@ -286,9 +294,9 @@ Add_VHost()
         echo "You access log filename: ${al_name}.log"
     fi
 
-    lnmp_docker_status()
+    lnmp_docker_status
 
-    if [ "$MYSQL_IS_RUNNING" == "Y" ]; then
+    if [ "${MYSQL_IS_RUNNING}" == "Y" ]; then
         Echo_Yellow "Create database and MySQL user with same name (y/n) "
         read create_database
 
@@ -318,13 +326,14 @@ Add_VHost()
     fi
     echo "set permissions of Virtual Host directory......"
     chmod -R 755 ${host_vhost_dir}
-    chown -R www:www ${host_vhost_dir}
+    chown -R www-data:www-data ${host_vhost_dir}
 
     Add_VHost_Config
 
     cat >${host_vhost_dir}/.user.ini<<EOF
 open_basedir=${server_vhost_dir}:/tmp/:/proc/
 EOF
+    chattr -i ${host_vhost_dir}/.user.ini
     chmod 644 ${host_vhost_dir}/.user.ini
     chattr +i ${host_vhost_dir}/.user.ini
 
@@ -401,11 +410,13 @@ Del_VHost()
             rm -f "${vhost_dir}/.user.ini"
         fi
         rm -f ${CUR_DIR}/config/nginx/conf.d/vhost/${domain}.conf
-        echo "========================================================"
+        lnmp_docker_nginx_reload
+	echo "========================================================"
         echo "Domain: ${domain} has been deleted."
         echo "Website files will not be deleted for security reasons."
         echo "You need to manually delete the website files."
         echo "========================================================"
+	
     fi
 }
 
