@@ -1,0 +1,61 @@
+version: '3'
+
+services:
+
+    nginx:
+        build: ./servers/nginx
+        image: lnmp-docker/nginx-acme
+        ports:
+            - "80:80"
+            - "443:443"
+        depends_on:
+            - "php"
+        volumes:
+            - "./config/nginx/conf.d:/etc/nginx/conf.d"
+            - "./config/nginx/rewrite:/etc/nginx/rewrite"
+            - "./www:/var/www"
+            - "./wwwlogs:/var/wwwlogs"
+            - "./config/nginx/ssl:/var/ssl"
+            - "./config/nginx/acme.sh:/var/acme.sh"
+            - "./config/timezone:/timezone"
+        #privileged: true
+        networks:
+            - app_net
+        container_name: "lnmp-docker-nginx-acme"
+
+    php:
+        build: ./servers/php-mysqli
+        image: lnmp-docker/php-mysqli
+        ports:
+            - "9000:9000"
+        volumes:
+            - "./www:/var/www"
+            - "./config/timezone:/timezone"
+
+        networks:
+            app_net:
+                ipv4_address: 10.10.10.2
+        container_name: "lnmp-docker-php-mysqli"
+
+    mysql:
+        build: ./servers/mysql
+        image: lnmp-docker/mysql-5.7.21
+        ports:
+            - "3306:3306"
+        volumes:
+        # NOTE: your data will be stored in ./mysql
+            - "./config/mysql:/var/lib/mysql"
+            - "./config/timezone:/timezone"
+        environment:
+            # mysql password
+            - MYSQL_ROOT_PASSWORD=mysql_password_1380c378
+        networks:
+            app_net:
+                ipv4_address: 10.10.10.1
+        container_name: "lnmp-docker-mysql"
+networks:
+    app_net:
+        driver: bridge
+        ipam:
+            config:
+                - subnet: 10.10.0.0/16

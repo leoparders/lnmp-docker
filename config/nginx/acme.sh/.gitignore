@@ -1,0 +1,4 @@
+*
+!.gitignore
+!acme_cmd.sh
+!acme.sh.env

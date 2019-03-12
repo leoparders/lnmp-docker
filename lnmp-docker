@@ -1,0 +1,970 @@
+#!/bin/bash
+CUR_DIR=`pwd`
+SERVER_VHOST_DIR="/var/www/"
+HOST_VHOST_DIR="$CUR_DIR/www"
+echo "CUR_DIR:$CUR_DIR"
+
+echo "+--------------------------------------------------+"
+echo "|    Manager for LNMP-Docker, Written by KrisTan   |"
+echo "+--------------------------------------------------+"
+echo "|              https://lnmp-docker.org             |"
+echo "+--------------------------------------------------+"
+
+arg1=$1
+arg2=$2
+
+#create www-data user & group if not exists
+lnmp_docker_check_user()
+{
+    case "$OSTYPE" in
+
+    linux*)
+        egrep "^$user" /etc/passwd >& /dev/null
+        if [ $? -ne 0 ]
+        then
+            Echo_Yellow "The www-data user & group not exist, creating it now ..."
+            useradd -rM www-data -s /sbin/nologin
+        fi
+    ;;
+    *)        Echo_Red "Could not add www-data to system, please add it manually" ;;
+    esac
+}
+
+lnmp_docker_start()
+{
+    Echo_Yellow "Starting LNMP Docker..."
+    lnmp_docker_check_user
+    docker-compose up &
+}
+
+lnmp_docker_stop()
+{
+    Echo_Yellow "Stoping LNMP Docker..."
+    docker-compose stop
+}
+
+lnmp_docker_restart()
+{
+    Echo_Yellow "Restart LNMP Docker..."
+    lnmp_docker_stop
+    lnmp_docker_start
+
+}
+
+lnmp_docker_rebuild()
+{
+    Echo_Yellow "Rebuild LNMP Docker..."
+    docker-compose down
+    docker-compose build --parallel
+}
+
+lnmp_docker_kill()
+{
+    Echo_Yellow "Kill nginx,php-fpm,mysql process..."
+    docker kill lnmp-docker-nginx-acme lnmp-docker-mysql lnmp-docker-php-mysqli
+    Echo_Green "done."
+}
+
+lnmp_docker_status()
+{
+    NGINX_SERVER=`docker-compose ps -q nginx`
+    PHP_SERVER=`docker-compose ps -q php`
+    MYSQL_SERVER=`docker-compose ps -q mysql`
+
+    if [[ "$NGINX_SERVER" != "" ]]; then
+        Echo_Green "--nginx \trunning"
+        NGINX_IS_RUNNING="Y"
+    else
+        Echo_Red   "--nginx \tstopped"
+        NGINX_IS_RUNNING="N"
+    fi
+
+    if [[ "$PHP_SERVER" != "" ]]; then
+        Echo_Green "--php \trunning"
+        PHP_IS_RUNNING="Y"
+    else
+        Echo_Red   "--php \tstopped"
+        PHP_IS_RUNNING="N"
+    fi
+
+    if [[ "$MYSQL_SERVER" != "" ]]; then
+        Echo_Green "--mysql \trunning"
+        MYSQL_IS_RUNNING="Y"
+    else
+        Echo_Red   "--mysql \tstopped"
+        MYSQL_IS_RUNNING="N"
+    fi
+}
+
+php_pathinfo_enable()
+{
+    if [ "${enable_pathinfo}" == "y" ]; then
+        include_enable_php="include enable-php-pathinfo.conf;"
+    else
+        include_enable_php="include enable-php.conf;"
+    fi
+}
+
+Function_Vhost()
+{
+    case "$1" in
+        [aA][dD][dD])
+            Add_VHost
+            ;;
+        [lL][iI][sS][tT])
+            List_VHost
+            ;;
+        [dD][eE][lL])
+            Del_VHost
+            ;;
+        [eE][xX][iI][tT])
+            exit 1
+            ;;
+        *)
+            echo "Usage: lnmp vhost {add|list|del}"
+            exit 1
+            ;;
+    esac
+}
+
+Function_Database()
+{
+    case "$1" in
+        [aA][dD][dD])
+            Add_Database_Menu
+            Add_Database
+            ;;
+        [lL][iI][sS][tT])
+            List_Database
+            ;;
+        [dD][eE][lL])
+            Del_Database
+            ;;
+        [eE][dD][iI][tT])
+            Edit_Database
+            ;;
+        [eE][xX][iI][tT])
+            exit 1
+            ;;
+        *)
+            echo "Usage: lnmp database {add|list|del}"
+            exit 1
+            ;;
+    esac
+}
+
+
+Add_VHost_Config()
+{
+    if [ ! -f ${CUR_DIR}/config/nginx/rewrite/${rewrite}.conf ]; then
+        echo "Create Virtul Host Rewrite file......"
+        touch ${CUR_DIR}/config/nginx/rewrite/${rewrite}.conf
+        echo "Create rewirte file successful,You can add rewrite rule into ${CUR_DIR}/config/nginx/rewrite/${rewrite}.conf."
+    else
+        echo "You select the exist rewrite rule:"
+        Echo_Yellow "\t[host]${CUR_DIR}/config/nginx/rewrite/${rewrite}.conf"
+        Echo_Green "\t[server]/etc/nginx/rewrite/${rewrite}.conf"
+    fi
+
+    php_pathinfo_enable
+
+    cat >"${CUR_DIR}/config/nginx/conf.d/vhost/${domain}.conf"<<EOF
+server
+    {
+        listen 80;
+        #listen [::]:80;
+        server_name ${domain} ${moredomain};
+        index index.html index.htm index.php default.html default.htm default.php;
+        root  ${server_vhost_dir};
+
+        include rewrite/${rewrite}.conf;
+        #error_page   404   /404.html;
+
+        # Deny access to PHP files in specific directory
+        #location ~ /(wp-content|uploads|wp-includes|images)/.*\.php$ { deny all; }
+
+        ${include_enable_php}
+
+        location ~ .*\.(gif|jpg|jpeg|png|bmp|swf)$
+        {
+            expires      30d;
+        }
+
+        location ~ .*\.(js|css)?$
+        {
+            expires      12h;
+        }
+
+        location ~ /.well-known {
+            allow all;
+        }
+
+        location ~ /\.
+        {
+            deny all;
+        }
+
+        ${al}
+    }
+EOF
+
+    echo "Test Nginx configure file......"
+    docker exec -t lnmp-docker-nginx-acme nginx -t
+    echo "Reload Nginx......"
+    docker exec -t lnmp-docker-nginx-acme nginx -s reload
+}
+
+Add_VHost()
+{
+    domain=""
+    while :;do
+        Echo_Yellow "Please enter domain(example: www.lnmp-docker.org ): "
+        read domain
+        if [ "${domain}" != "" ]; then
+            if [ -f "${CUR_DIR}/config/nginx/conf.d/vhost/${domain}.conf" ]; then
+                Echo_Red " ${domain} is exist,please check!"
+                exit 1
+            else
+                echo " Your domain: ${domain}"
+            fi
+            break
+        else
+            Echo_Red "Domain name can't be empty!"
+        fi
+    done
+
+    Echo_Yellow "Enter more domain name(example: lnmp-docker.org  *.lnmp-docker.org ): "
+    read moredomain
+    if [ "${moredomain}" != "" ]; then
+        echo " domain list: ${moredomain}"
+    fi
+
+    server_vhost_dir="${SERVER_VHOST_DIR}/${domain}"
+    host_vhost_dir="${HOST_VHOST_DIR}/${domain}"
+
+    Echo_Yellow "Virtual Host Directory: [host]${host_vhost_dir} "
+    Echo_Green "Virtual Host Directory: [server]${server_vhost_dir} "
+
+    Echo_Yellow "Allow Rewrite rule? (y/n) "
+    read allow_rewrite
+    if [[ "${allow_rewrite}" == "n" || "${allow_rewrite}" == "" ]]; then
+        rewrite="none"
+    elif [ "${allow_rewrite}" == "y" ]; then
+        rewrite="other"
+        echo "Please enter the rewrite of programme, "
+        echo "wordpress,discuzx,typecho,thinkphp,laravel,codeigniter,yii2 rewrite was exist."
+        Echo_Yellow "(Default rewrite: other): "
+        read rewrite
+        if [ "${rewrite}" == "" ]; then
+            rewrite="other"
+        fi
+    fi
+    echo "You choose rewrite: ${rewrite}"
+
+    Echo_Yellow "Enable PHP Pathinfo? (y/n) "
+    read enable_pathinfo
+    if [[ "${enable_pathinfo}" == "n" || "${enable_pathinfo}" == "" ]]; then
+        echo "Disable pathinfo."
+        enable_pathinfo="n"
+    elif [ "${enable_pathinfo}" == "y" ]; then
+        echo "Enable pathinfo."
+        enable_pathinfo="y"
+    fi
+
+    Echo_Yellow "Allow access log? (y/n) "
+    read access_log
+    if [[ "${access_log}" == "n" || "${access_log}" == "" ]]; then
+        echo "Disable access log."
+        al="access_log off;"
+    else
+        Echo_Yellow "Enter access log filename(Default:${domain}.log): "
+        read al_name
+        if [ "${al_name}" == "" ]; then
+            al_name="${domain}"
+        fi
+        al="access_log  /var/wwwlogs/${al_name}.log;"
+        echo "You access log filename: ${al_name}.log"
+    fi
+
+    lnmp_docker_status()
+
+    if [ "$MYSQL_IS_RUNNING" == "Y" ]; then
+        Echo_Yellow "Create database and MySQL user with same name (y/n) "
+        read create_database
+
+        if [ "${create_database}" == "y" ]; then
+            Verify_DB_Password
+            Add_Database_Menu
+        fi
+    fi
+
+    Echo_Yellow "Add SSL Certificate (y/n) "
+    read create_ssl
+    if [ "${create_ssl}" == "y" ]; then
+        Add_SSL_Menu
+    fi
+
+    echo ""
+    echo "Press any key to start create virtul host..."
+    OLDCONFIG=`stty -g`
+    stty -icanon -echo min 1 time 0
+    dd count=1 2>/dev/null
+    stty ${OLDCONFIG}
+
+    echo "Create Virtul Host directory......"
+    mkdir -p ${host_vhost_dir}
+    if [ "${access_log}" == "y" ]; then
+        touch ${CUR_DIR}/wwwlogs/${al_name}.log
+    fi
+    echo "set permissions of Virtual Host directory......"
+    chmod -R 755 ${host_vhost_dir}
+    chown -R www:www ${host_vhost_dir}
+
+    Add_VHost_Config
+
+    cat >${host_vhost_dir}/.user.ini<<EOF
+open_basedir=${server_vhost_dir}:/tmp/:/proc/
+EOF
+    chmod 644 ${host_vhost_dir}/.user.ini
+    chattr +i ${host_vhost_dir}/.user.ini
+
+    #/etc/init.d/php-fpm restart
+
+    if [ "${create_database}" == "y" ]; then
+        Add_Database
+    fi
+
+    if [ "${create_ssl}" == "y" ]; then
+        Add_SSL
+    fi
+
+    Echo_Green "================================================"
+    echo "Virtualhost infomation:"
+    echo "Your domain: ${domain}"
+    echo "Home Directory: ${vhostdir}"
+    echo "Rewrite: ${rewrite}"
+    if [ "${access_log}" == "n" ]; then
+        echo "Enable log: no"
+    else
+        echo "Enable log: yes"
+    fi
+    if [ "${create_database}" == "y" ]; then
+        echo "Database username: ${database_name}"
+        echo "Database userpassword: ${mysql_password}"
+        echo "Database Name: ${database_name}"
+    else
+        echo "Create database: no"
+    fi
+
+    if [ "${create_ssl}" == "y" ]; then
+        echo "Enable SSL: yes"
+        if [ "${ssl_choice}" == "1" ]; then
+            echo "  =>Certificate file"
+        elif [ "${ssl_choice}" == "2" ]; then
+            echo "  =>Let's Encrypt"
+        fi
+    fi
+    Echo_Green "================================================"
+}
+
+List_VHost()
+{
+    echo "Nginx Virtualhost list:"
+    ls /usr/local/nginx/conf/vhost/ | grep ".conf$" | sed 's/.conf//g'
+}
+
+Del_VHost()
+{
+    echo "======================================="
+    echo "Current Virtualhost:"
+    List_VHost
+    echo "======================================="
+    domain=""
+    while :;do
+        Echo_Yellow "Please enter domain you want to delete: "
+        read domain
+        if [ "${domain}" == "" ]; then
+            Echo_Red "Domain name can't be empty."
+        else
+            break
+        fi
+    done
+    if [ ! -f "/usr/local/nginx/conf/vhost/${domain}.conf" ]; then
+        echo "=========================================="
+        echo "Domain: ${domain} was not exist!"
+        echo "=========================================="
+        exit 1
+    else
+        if [ -f "${vhostdir}/.user.ini" ]; then
+            chattr -i "${vhostdir}/.user.ini"
+            rm -f "${vhostdir}/.user.ini"
+        fi
+        rm -f /usr/local/nginx/conf/vhost/${domain}.conf
+        echo "========================================================"
+        echo "Domain: ${domain} has been deleted."
+        echo "Website files will not be deleted for security reasons."
+        echo "You need to manually delete the website files."
+        echo "========================================================"
+    fi
+}
+
+Check_DB()
+{
+    MYSQL_Ver=`docker exec -it lnmp-docker-mysql mysql --version`
+}
+
+Make_TempMycnf()
+{
+    if [ ! -d "${CUR_DIR}/config/mysql/temp" ]; then
+        mkdir -p ${CUR_DIR}/config/mysql/temp
+    fi
+    cat >${CUR_DIR}/config/mysql/temp/.my.cnf<<EOF
+[client]
+user=root
+password='$1'
+EOF
+    chmod 600 ${CUR_DIR}/config/mysql/temp/.my.cnf
+}
+
+MysqlExec()
+{
+    cat >${CUR_DIR}/config/mysql/temp/.mysql_cmd<<EOF
+#!/bin/bash
+mysql $1
+EOF
+    chmod a+x ${CUR_DIR}/config/mysql/temp/.mysql_cmd
+    docker exec -t lnmp-docker-mysql /var/lib/mysql/temp/.mysql_cmd
+}
+
+Verify_DB_Password()
+{
+    Check_DB
+    status=1
+    while [ $status -eq 1 ]; do
+        Echo_Yellow "Enter current root password of Database (Password will not shown): "
+        read -s DB_Root_Password
+        echo
+        Make_TempMycnf "${DB_Root_Password}"
+        Do_Query ""
+        status=$?
+    done
+    echo "OK, MySQL root password correct."
+}
+
+Do_Query()
+{
+    echo "$1" >${CUR_DIR}/config/mysql/temp/.mysql.tmp
+    chmod 600 ${CUR_DIR}/config/mysql/temp/.mysql.tmp
+    Check_DB
+    MysqlExec "--defaults-file=/var/lib/mysql/temp/.my.cnf </var/lib/mysql/temp/.mysql.tmp"
+    return $?
+}
+
+TempMycnf_Clean()
+{
+    if [ -s ${CUR_DIR}/config/mysql/temp/.my.cnf ]; then
+        rm -f ${CUR_DIR}/config/mysql/temp/.my.cnf
+    fi
+    if [ -s ${CUR_DIR}/config/mysql/temp/.mysql.tmp ]; then
+        rm -f ${CUR_DIR}/config/mysql/temp/.mysql.tmp
+    fi
+    if [ -s ${CUR_DIR}/config/mysql/temp/.mysql_cmd ]; then
+        rm -f ${CUR_DIR}/config/mysql/temp/.mysql_cmd
+    fi
+}
+
+Enter_Database_Name()
+{
+    while :;do
+        Echo_Yellow "Enter database name: "
+        read database_name
+        if [ "${database_name}" == "" ]; then
+            Echo_Red "Database Name can't be empty!"
+        else
+            break
+        fi
+    done
+}
+
+Add_Database_Menu()
+{
+    Enter_Database_Name
+    echo "Your will create a database and MySQL user with same name: ${database_name}"
+    Echo_Yellow "Please enter password for mysql user ${database_name}: "
+    read mysql_password
+    echo "Your password: ${mysql_password} "
+}
+
+Add_Database()
+{
+    cat >${CUR_DIR}/config/mysql/temp/.add_mysql.sql<<EOF
+CREATE USER '${database_name}'@'localhost' IDENTIFIED BY '${mysql_password}';
+CREATE USER '${database_name}'@'127.0.0.1' IDENTIFIED BY '${mysql_password}';
+CREATE USER '${database_name}'@'10.10.10.2' IDENTIFIED BY '${mysql_password}';
+GRANT USAGE ON *.* TO '${database_name}'@'localhost' IDENTIFIED BY '${mysql_password}';
+GRANT USAGE ON *.* TO '${database_name}'@'127.0.0.1' IDENTIFIED BY '${mysql_password}';
+GRANT USAGE ON *.* TO '${database_name}'@'10.10.10.2' IDENTIFIED BY '${mysql_password}';
+CREATE DATABASE IF NOT EXISTS \`${database_name}\`;
+GRANT ALL PRIVILEGES ON \`${database_name}\`.* TO '${database_name}'@'localhost';
+GRANT ALL PRIVILEGES ON \`${database_name}\`.* TO '${database_name}'@'127.0.0.1';
+GRANT ALL PRIVILEGES ON \`${database_name}\`.* TO '${database_name}'@'10.10.10.2';
+FLUSH PRIVILEGES;
+EOF
+
+    MysqlExec "--defaults-file=/var/lib/mysql/temp/.my.cnf < /var/lib/mysql/temp/.add_mysql.sql"
+    [ $? -eq 0 ] && echo "Add database Sucessfully." || echo "Add database failed!"
+    rm -fv ${CUR_DIR}/config/mysql/temp/.add_mysql.sql
+}
+
+List_Database()
+{
+    MysqlExec "--defaults-file=/var/lib/mysql/temp/.my.cnf -e \"SHOW DATABASES;\""
+    [ $? -eq 0 ] && echo "List all databases Sucessfully." || echo "List all databases failed!"
+}
+
+Edit_Database()
+{
+    while :;do
+        Echo_Yellow "Enter database username: "
+        read database_username
+        if [ "${database_username}" == "" ]; then
+            Echo_Red "Database Username can't be empty!"
+        else
+            break
+        fi
+    done
+    while :;do
+        Echo_Yellow "Enter NEW Password: "
+        read database_username_passwd
+        if [ "${database_username_passwd}" == "" ]; then
+            Echo_Red "Database Password can't be empty!"
+        else
+            break
+        fi
+    done
+
+    if echo "${MySQL_Ver}" | grep -Eqi '^5.7.';then
+        Do_Query "UPDATE mysql.user SET authentication_string=PASSWORD('${database_username_passwd}') WHERE User='${database_username}' AND Host IN ('localhost', '127.0.0.1', '::1');"
+    elif echo "${MySQL_Ver}" | grep -Eqi '^8.0.';then
+        Do_Query "SET PASSWORD FOR '${database_username}'@'127.0.0.1' = '${database_username_passwd}';"
+        Do_Query "SET PASSWORD FOR '${database_username}'@'localhost' = '${database_username_passwd}';"
+    else
+        Do_Query "UPDATE mysql.user SET Password=PASSWORD('${database_username_passwd}') WHERE User='${database_username}' AND Host IN ('localhost', '127.0.0.1', '::1');"
+    fi
+    [ $? -eq 0 ] && echo "Edit user password Sucessfully." || echo "Edit user password databases failed!"
+    Do_Query "FLUSH PRIVILEGES;"
+}
+
+Del_Database()
+{
+    List_Database
+    Enter_Database_Name
+    if [[ "${database_name}" == "information_schema" || "${database_name}" == "mysql" || "${database_name}" == "performance_schema" ]]; then
+        echo "MySQL System Database can't be delete!"
+        exit 1
+    fi
+    echo "Your will delete database and MySQL user with same name: ${database_name}"
+    echo "Sleep 10s, Press ctrl+c to cancel..."
+    Sleep_Sec 10
+    cat >${CUR_DIR}/config/mysql/temp/.del.mysql.sql<<EOF
+DROP USER '${database_name}'@'127.0.0.1';
+DROP USER '${database_name}'@'localhost';
+DROP DATABASE \`${database_name}\`;
+FLUSH PRIVILEGES;
+EOF
+    MysqlExec "--defaults-file=/var/lib/mysql/temp/.my.cnf < /var/lib/mysql/temp/.del.mysql.sql"
+    [ $? -eq 0 ] && echo "Delete database: ${database_name} Sucessfully." || echo "Delete database: ${database_name} failed!"
+    rm -f /var/lib/mysql/temp/.del.mysql.sql
+}
+
+
+Add_SSL_Info_Menu()
+{
+    domain=""
+    while :;do
+        Echo_Yellow "Please enter domain(example: www.lnmp-docker.org ): "
+        read domain
+        if [ "${domain}" != "" ]; then
+            echo " Your domain: ${domain}"
+            break
+        else
+            Echo_Red "Domain name can't be empty!"
+        fi
+    done
+
+    Echo_Yellow "Enter more domain name(example: lnmp-docker.org  *.lnmp-docker.org ): "
+    read moredomain
+    if [ "${moredomain}" != "" ]; then
+        echo " domain list: ${moredomain}"
+    fi
+
+    server_vhost_dir="/var/www/${domain}"
+    host_vhost_dir="${CUR_DIR}/www/${domain}"
+    echo "Virtual Host Directory: ${host_vhost_dir}||${server_vhost_dir}"
+    #done
+
+    Echo_Yellow "Allow Rewrite rule? (y/n) "
+    read allow_rewrite
+    if [[ "${allow_rewrite}" == "n" || "${allow_rewrite}" == "" ]]; then
+        rewrite="none"
+    elif [ "${allow_rewrite}" == "y" ]; then
+        rewrite="other"
+        echo "Please enter the rewrite of programme, "
+        echo "wordpress,discuzx,typecho,thinkphp,laravel,codeigniter,yii2 rewrite was exist."
+        Echo_Yellow "(Default rewrite: other): "
+        read rewrite
+        if [ "${rewrite}" == "" ]; then
+            rewrite="other"
+        fi
+    fi
+    echo "You choose rewrite: ${rewrite}"
+
+    Echo_Yellow "Allow access log? (y/n) "
+    read access_log
+    if [[ "${access_log}" == "n" || "${access_log}" == "" ]]; then
+        echo "Disable access log."
+        al="access_log off;"
+    else
+        Echo_Yellow "Enter access log filename(Default:${domain}.log): "
+        read al_name
+        if [ "${al_name}" == "" ]; then
+            al_name="${domain}"
+        fi
+        al="access_log  /var/wwwlogs/${al_name}.log;"
+        echo "You access log filename: ${al_name}.log"
+    fi
+
+    Echo_Yellow "Enable PHP Pathinfo? (y/n) "
+    read enable_pathinfo
+    if [[ "${enable_pathinfo}" == "n" || "${enable_pathinfo}" == "" ]]; then
+        echo "Disable pathinfo."
+    elif [ "${allow_rewrite}" == "y" ]; then
+        echo "Enable pathinfo."
+        enable_pathinfo="y"
+    fi
+
+    php_pathinfo_enable
+}
+
+Add_SSL_Menu()
+{
+    if [ "${info}" == "n" ]; then
+        Add_SSL_Info_Menu
+    fi
+    echo "1: Use your own SSL Certificate and Key"
+    echo "2: Use Let's Encrypt to create SSL Certificate and Key"
+    while :;do
+        Echo_Yellow "Enter 1 or 2: "
+        read ssl_choice
+        if [ "${ssl_choice}" == "1" ]; then
+            while :;do
+                Echo_Yellow "Please enter full path to SSL Certificate file: "
+                read ssl_certificate
+                if [ "${ssl_certificate}" == "" ]; then
+                    Echo_Red "SSL Certificate file cannot be empty!"
+                else
+                    break
+                fi
+            done
+            while :;do
+                Echo_Yellow "Please enter full path to SSL Certificate Key file: "
+                read ssl_certificate_key
+                if [ "${ssl_certificate_key}" == "" ]; then
+                    Echo_Red "SSL Certificate Key file cannot be empty!"
+                else
+                    break
+                fi
+            done
+            break
+        elif [ "${ssl_choice}" == "2" ]; then
+            echo "It will be processed automatically."
+            break
+        else
+            Echo_Red "Please Enter 1 or 2!"
+        fi
+    done
+}
+
+LetsencryptExec()
+{
+    docker exec -t lnmp-docker-nginx-acme /var/acme.sh/acme_cmd.sh $@
+}
+
+Add_Letsencrypt()
+{
+    if [[ "${host_vhost_dir}" == "" || "${letsdomain}" == "" ]]; then
+        Echo_Red "Two parameters are needed!"
+        exit 1
+    fi
+    if [ ! -d "${host_vhost_dir}" ]; then
+        Echo_Red "${host_vhost_dir} does not exist or is not a directory!"
+        exit
+    fi
+
+    if [ -s ${CUR_DIR}/config/nginx/ssl/${domain}/fullchain.cer ]; then
+        echo "Removing exist domain certificate..."
+        rm -rf ${CUR_DIR}/config/nginx/ssl/${domain}
+    fi
+
+    echo "Starting create SSL Certificate use Let's Encrypt..."
+    LetsencryptExec " --issue ${letsdomain} -w ${server_vhost_dir} --certhome /var/ssl --nginx"
+    lets_status=$?
+    if [ "${lets_status}" = 0 ]; then
+        Echo_Green "Let's Encrypt SSL Certificate create successfully."
+    else
+        Echo_Red "Let's Encrypt SSL Certificate create failed!"
+    fi
+}
+
+Create_SSL_Config()
+{
+    if [ ! -s ${CUR_DIR}/config/nginx/ssl/dhparam.pem ]; then
+        echo "Create dhparam.pem..."
+        mkdir -p ${CUR_DIR}/config/nginx/ssl
+        openssl dhparam -dsaparam -out ${CUR_DIR}/config/nginx/ssl/dhparam.pem 4096
+    fi
+
+    cat >>"${CUR_DIR}/config/nginx/conf.d/vhost/${domain}.conf"<<EOF
+
+server
+    {
+        listen 443 ssl http2;
+        #listen [::]:443 ssl http2;
+        server_name ${domain} ${moredomain};
+        index index.html index.htm index.php default.html default.htm default.php;
+        root  ${server_vhost_dir};
+        #ssl on;
+        ssl_certificate ${ssl_certificate};
+        ssl_certificate_key ${ssl_certificate_key};
+        ssl_session_timeout 5m;
+        ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
+        ssl_prefer_server_ciphers on;
+        ssl_ciphers "EECDH+CHACHA20:EECDH+CHACHA20-draft:EECDH+AES128:RSA+AES128:EECDH+AES256:RSA+AES256:EECDH+3DES:RSA+3DES:!MD5";
+        ssl_session_cache builtin:1000 shared:SSL:10m;
+        ssl_dhparam /var/ssl/dhparam.pem;
+
+        include rewrite/${rewrite}.conf;
+        #error_page   404   /404.html;
+
+        # Deny access to PHP files in specific directory
+        #location ~ /(wp-content|uploads|wp-includes|images)/.*\.php$ { deny all; }
+
+        ${include_enable_php}
+
+        location ~ .*\.(gif|jpg|jpeg|png|bmp|swf)$
+        {
+            expires      30d;
+        }
+
+        location ~ .*\.(js|css)?$
+        {
+            expires      12h;
+        }
+
+        location ~ /.well-known {
+            allow all;
+        }
+
+        location ~ /\.
+        {
+            deny all;
+        }
+
+        ${al}
+    }
+EOF
+
+    echo "Test Nginx configure file......"
+    docker exec -t lnmp-docker-nginx-acme nginx -t
+    echo "Reload Nginx......"
+    docker exec -t lnmp-docker-nginx-acme nginx -s reload
+}
+
+Add_SSL()
+{
+    if [ "${ssl_choice}" == "1" ]; then
+        Create_SSL_Config
+    elif [ "${ssl_choice}" == "2" ]; then
+        letsdomain=""
+        if [ "${moredomain}" != "" ]; then
+            letsdomain="-d ${domain}"
+            for i in ${moredomain};do
+                letsdomain=${letsdomain}" -d ${i}"
+            done
+        else
+            letsdomain="-d ${domain}"
+        fi
+        if [ ! -s "${CUR_DIR}/config/nginx/conf.d/vhost/${domain}.conf" ]; then
+            Add_VHost_Config
+        fi
+        if [ ! -d "${host_vhost_dir}" ]; then
+            mkdir -p "${host_vhost_dir}"
+        fi
+        Add_Letsencrypt
+        ssl_certificate="/var/ssl/${domain}/fullchain.cer"
+        ssl_certificate_key="/var/ssl/${domain}/${domain}.key"
+        if [ "${lets_status}" = 0 ]; then
+            Create_SSL_Config
+        fi
+    fi
+}
+
+Check_Dns_Provider()
+{
+    LetsencryptExec "--checkdnsprovider" "$1"
+    lets_status=$?
+    Echo_Blue "lets_status:"$lets_status
+}
+
+Add_Dns_SSL()
+{
+    provider=$1
+    if [ "${provider}" != "" ]; then
+        dns_provider="dns_${provider}"
+    else
+        Echo_Red "The dns manual mode can not renew automatically, you must renew it manually."
+    fi
+
+    Check_Dns_Provider ${provider}
+
+    if [[  ! ${lets_status} && "${provider}" != "" ]]; then
+        echo "DNS Provider: ${provider} not found."
+        exit 1
+    fi
+    Add_SSL_Info_Menu
+
+    if [ -s ${CUR_DIR}/config/nginx/ssl/${domain}/fullchain.cer ]; then
+        echo "Removing exist domain certificate..."
+        rm -rf ${CUR_DIR}/config/nginx/ssl/${domain}
+    fi
+
+    letsdomain=""
+    if [ "${moredomain}" != "" ]; then
+        letsdomain="-d ${domain}"
+        for i in ${moredomain};do
+            letsdomain=${letsdomain}" -d ${i}"
+        done
+    else
+        letsdomain="-d ${domain}"
+    fi
+
+    echo "Starting create SSL Certificate use Let's Encrypt..."
+    if [ "${provider}" != "" ]; then
+        LetsencryptExec " --issue ${letsdomain} --dns ${dns_provider} --certhome /var/ssl --nginx"
+        lets_status=$?
+    else
+        LetsencryptExec  " --issue ${letsdomain} --dns --yes-I-know-dns-manual-mode-enough-go-ahead-please --certhome /var/ssl --nginx"
+        Echo_Yellow "Please add the above TXT record to the domain in 120 seconds!!!"
+        echo
+        Sleep_Sec 120
+        LetsencryptExec  " --renew ${letsdomain} --yes-I-know-dns-manual-mode-enough-go-ahead-please --certhome /var/ssl --nginx"
+        lets_status=$?
+    fi
+    if [ "${lets_status}" = 0 ] || [[ "${provider}" = "" && "${lets_status}" = 1 && -s "${CUR_DIR}/config/nginx/ssl/${domain}/fullchain.cer" ]]; then
+        if [ ! -d "$host_vhost_dir" ]; then
+            echo "Create Virtul Host directory......"
+            mkdir -p ${host_vhost_dir}
+            echo "set permissions of Virtual Host directory......"
+            chmod -R 755 ${host_vhost_dir}
+            chown -R www-data ${host_vhost_dir}
+        fi
+
+        if [ ! -s "${CUR_DIR}/config/nginx/conf.d/vhost/${domain}.conf" ]; then
+            Add_VHost_Config
+        fi
+        ssl_certificate="/var/ssl/${domain}/fullchain.cer"
+        ssl_certificate_key="/var/ssl/${domain}/${domain}.key"
+        Create_SSL_Config
+        Echo_Green "Let's Encrypt SSL Certificate create successfully."
+    else
+        Echo_Red "Let's Encrypt SSL Certificate create failed!"
+    fi
+}
+
+Color_Text()
+{
+  echo -e " \033[0;$2m$1\033[0m"
+}
+
+Echo_Red()
+{
+  echo $(Color_Text "$1" "31")
+}
+
+Echo_Green()
+{
+  echo $(Color_Text "$1" "32")
+}
+
+Echo_Yellow()
+{
+  echo -n $(Color_Text "$1" "33")
+}
+
+Echo_Blue()
+{
+  echo $(Color_Text "$1" "34")
+}
+
+Sleep_Sec()
+{
+    seconds=$1
+    while [ "${seconds}" -ge "0" ];do
+      echo -ne "\r     \r"
+      echo -n ${seconds}
+      seconds=$(($seconds - 1))
+      sleep 1
+    done
+    echo -ne "\r"
+}
+
+Check_DB
+
+case "${arg1}" in
+    start)
+        lnmp_docker_start
+        ;;
+    stop)
+        lnmp_docker_stop
+        ;;
+    restart)
+        lnmp_docker_stop
+        lnmp_docker_start
+        ;;
+    reload)
+        lnmp_docker_reload
+        ;;
+    rebuild)
+        lnmp_docker_rebuild
+        ;;
+    kill)
+        lnmp_docker_kill
+        ;;
+    status)
+        lnmp_docker_status
+        ;;
+    vhost)
+        Function_Vhost ${arg2}
+        ;;
+    database)
+        Verify_DB_Password
+        Function_Database ${arg2}
+        TempMycnf_Clean
+        ;;
+    ssl)
+        info="n"
+        Add_SSL_Menu
+        Add_SSL
+        ;;
+    dnsssl|dns)
+        Add_Dns_SSL ${arg2}
+        ;;
+    *)
+        echo "Usage: lnmp-dcoker {start|stop|restart|rebuild|kill|status}"
+        echo "Usage: lnmp-dcoker vhost {add|list|del}"
+        echo "Usage: lnmp-dcoker database {add|list|edit|del}"
+        echo "Usage: lnmp-dcoker ssl add"
+        echo "Usage: lnmp-dcoker {dnsssl|dns} {cx|ali|cf|dp|he|gd|aws}"
+        ;;
+esac
+exit
