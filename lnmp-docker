@@ -370,7 +370,7 @@ EOF
 List_VHost()
 {
     echo "Nginx Virtualhost list:"
-    ls /usr/local/nginx/conf/vhost/ | grep ".conf$" | sed 's/.conf//g'
+    ls ${CUR_DIR}/config/nginx/conf.d/vhost/ | grep ".conf$" | sed 's/.conf//g'
 }
 
 Del_VHost()
@@ -389,17 +389,18 @@ Del_VHost()
             break
         fi
     done
-    if [ ! -f "/usr/local/nginx/conf/vhost/${domain}.conf" ]; then
+    if [ ! -f "${CUR_DIR}/config/nginx/conf.d/vhost/${domain}.conf" ]; then
         echo "=========================================="
         echo "Domain: ${domain} was not exist!"
         echo "=========================================="
         exit 1
     else
-        if [ -f "${vhostdir}/.user.ini" ]; then
-            chattr -i "${vhostdir}/.user.ini"
-            rm -f "${vhostdir}/.user.ini"
+        vhost_dir="${HOST_VHOST_DIR}/${domain}"
+        if [ -f "${vhost_dir}/.user.ini" ]; then
+            chattr -i "${vhost_dir}/.user.ini"
+            rm -f "${vhost_dir}/.user.ini"
         fi
-        rm -f /usr/local/nginx/conf/vhost/${domain}.conf
+        rm -f ${CUR_DIR}/config/nginx/conf.d/vhost/${domain}.conf
         echo "========================================================"
         echo "Domain: ${domain} has been deleted."
         echo "Website files will not be deleted for security reasons."
