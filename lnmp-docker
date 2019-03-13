@@ -416,7 +416,7 @@ Del_VHost()
         echo "Website files will not be deleted for security reasons."
         echo "You need to manually delete the website files."
         echo "========================================================"
-	
+
     fi
 }
 
@@ -893,6 +893,12 @@ Add_Dns_SSL()
     fi
 }
 
+Renew_SSL()
+{
+     LetsencryptExec  " --renew -d $1 --force --yes-I-know-dns-manual-mode-enough-go-ahead-please --certhome /var/ssl --nginx"
+}
+
+
 Color_Text()
 {
   echo -e " \033[0;$2m$1\033[0m"
@@ -971,12 +977,16 @@ case "${arg1}" in
     dnsssl|dns)
         Add_Dns_SSL ${arg2}
         ;;
+    renew)
+        Renew_SSL ${arg2}
+        ;;
     *)
         echo "Usage: lnmp-dcoker {start|stop|restart|rebuild|kill|status}"
         echo "Usage: lnmp-dcoker vhost {add|list|del}"
         echo "Usage: lnmp-dcoker database {add|list|edit|del}"
         echo "Usage: lnmp-dcoker ssl add"
         echo "Usage: lnmp-dcoker {dnsssl|dns} {cx|ali|cf|dp|he|gd|aws}"
+        echo "Usage: lnmp-dcoker renew your_domain"
         ;;
 esac
 exit

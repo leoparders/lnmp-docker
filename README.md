@@ -30,29 +30,59 @@ For more operations to containers, please refer to:
 
 $ sudo docker-compose --help
 ## 4. How to use
-Build docker image & container via lnmp-docker:
+### Build docker image & container via lnmp-docker:
 
     $ ./lnmp-docker rebuild
 
-Start Sever:
+### Start Sever:
 
     $ sudo ./lnmp-docker start
 
-Add/list/del virtual host:
+### Add virtual host:
 
-    $ sudo ./lnmp-docker vhost {add|list|del}
+    $ sudo ./lnmp-docker vhost add
+![lnmp-docker add vhost](https://github.com/leopardor/lnmp-docker/blob/master/assets/lnmp-docker-add-vhost.png?raw=true)
 
-add/list/edit/del database:
+### List virtual host:
 
-    $ sudo ./lnmp-docker database {add|list|edit|del}
+    $ sudo ./lnmp-docker vhost list
+![lnmp-docker list vhost](https://github.com/leopardor/lnmp-docker/blob/master/assets/lnmp-docker-list-vhost.png?raw=true)
 
-add ssl:
+### Delete virtual host:
+
+    $ sudo ./lnmp-docker vhost del
+![lnmp-docker delete vhost](https://github.com/leopardor/lnmp-docker/blob/master/assets/lnmp-docker-del-vhost.png?raw=true)
+
+### Add database:
+
+    $ sudo ./lnmp-docker database add
+![lnmp-docker add database](https://github.com/leopardor/lnmp-docker/blob/master/assets/lnmp-dokcer-add-database.png?raw=true)
+
+### List database:
+
+    $ sudo ./lnmp-docker database list
+![lnmp-docker list database](https://github.com/leopardor/lnmp-docker/blob/master/assets/lnmp-dokcer-list-database.png?raw=true)
+
+### Delete database:
+
+    $ sudo ./lnmp-docker database del
+![lnmp-docker delete database](https://github.com/leopardor/lnmp-docker/blob/master/assets/lnmp-dokcer-del-database.png?raw=true)
+
+### Add ssl:
 
     $ sudo ./lnmp-docker ssl add
+![lnmp-docker Add ssl](https://github.com/leopardor/lnmp-docker/blob/master/assets/lnmp-dokcer-add-ssl.png?raw=true)
 
-add dnssl/dns:
+### Add dnsssl via API Key:
 
-    $ sudo ./lnmp-docker {dnsssl|dns} {cx|ali|cf|dp|he|gd|aws}
+    $ sudo ./lnmp-docker dnsssl ali
+![lnmp-docker Add dnsssl via API Key](https://github.com/leopardor/lnmp-docker/blob/master/assets/lnmp-dokcer-dnsssl.png?raw=true)
+
+### Force renew ssl:
+
+    $ sudo ./lnmp-docker renew your_domain
+![lnmp-docker renew ssl](https://github.com/leopardor/lnmp-docker/blob/master/assets/lnmp-dokcer-renew-ssl.png?raw=true)
+
 
 ## 5. Contributors
 
