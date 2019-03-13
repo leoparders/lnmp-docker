@@ -1,4 +1,5 @@
 FROM nginx:1.15.7
+LABEL maintainer="Leopard02 <xianbotan@icloud.com>"
 
 VOLUME /timezone
 

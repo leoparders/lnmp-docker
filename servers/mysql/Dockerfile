@@ -1,5 +1,5 @@
-FROM mysql:5.7.21 
-
+FROM mysql:5.7.21
+LABEL maintainer="Leopard02 <xianbotan@icloud.com>"
 VOLUME /timezone
 
 RUN rm -rfv /etc/localtime
