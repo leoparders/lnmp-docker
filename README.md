@@ -76,7 +76,7 @@ $ sudo docker-compose --help
 ### Add dnsssl via API Key:
 
     $ sudo ./lnmp-docker dnsssl ali
-![lnmp-docker Add dnsssl via API Key](https://github.com/leopardor/lnmp-docker/blob/master/assets/lnmp-dokcer-dnsssl.png?raw=true)
+![lnmp-docker Add dnsssl via API Key](https://github.com/leopardor/lnmp-docker/blob/master/assets/lnmp-docker-dnsssl.png?raw=true)
 
 ### Force renew ssl:
 
